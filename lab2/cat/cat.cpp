@@ -1,7 +1,8 @@
 #include <iostream>
 #include <cmath>
 #include <vector>
-#include <algorithm> 
+#include <algorithm>
+#include <tuple>
 
 #include <vtkDoubleArray.h>
 #include <vtkPoints.h>
@@ -15,215 +16,162 @@
 
 using namespace std;
 
-
-class CalcNode
-{
-
-friend class CalcMesh;
+class CalcNode {
+    friend class CalcMesh;
 
 protected:
-    // Координаты
     double x;
     double y;
     double z;
-    // Некая величина, в попугаях
     double smth;
-    // Скорость
     double vx;
     double vy;
     double vz;
 
 public:
-    // Конструктор по умолчанию
-    CalcNode() : x(0.0), y(0.0), z(0.0), smth(0.0), vx(0.0), vy(0.0), vz(0.0)
-    {
-    }
+    CalcNode() : x(0.0), y(0.0), z(0.0), smth(0.0), vx(0.0), vy(0.0), vz(0.0) {}
 
-    // Конструктор с указанием всех параметров
     CalcNode(double x, double y, double z, double smth, double vx, double vy, double vz)
-            : x(x), y(y), z(z), smth(smth), vx(vx), vy(vy), vz(vz)
-    {
-    }
+        : x(x), y(y), z(z), smth(smth), vx(vx), vy(vy), vz(vz) {}
 
-    // Метод отвечает за перемещение точки
-    // Движемся время tau из текущего положения с текущей скоростью
     void move(double tau) {
         x += vx * tau;
         y += vy * tau;
         z += vz * tau;
     }
+
     void setVelocity(double vx_, double vy_, double vz_) {
         vx = vx_;
         vy = vy_;
         vz = vz_;
     }
 
-    // Метод для получения координат
-    std::tuple<double, double, double> getCoords() const
-    {
+    std::tuple<double, double, double> getCoords() const {
         return std::make_tuple(x, y, z);
     }
 };
 
-// Класс элемента сетки
-class Element
-{
-// Класс сетки будет friend-ом и элемента тоже
-// (и вообще будет нагло считать его просто структурой)
-friend class CalcMesh;
-
+class Element {
+    friend class CalcMesh;
 protected:
-    // Индексы узлов, образующих этот элемент сетки
     unsigned long nodesIds[4];
 };
-// Класс расчётной сетки
+
 class CalcMesh
 {
 protected:
-    // 3D-сетка из расчётных точек
     vector<CalcNode> nodes;
     vector<Element> elements;
-    // Добавим вектор для хранения номеров узлов, относящихся к ушкам.
-    std::vector<unsigned long> earNodes;
-
+    vector<unsigned long> tailNodes; // Узлы хвоста
+    double tailCentroidX = 0.0;
+    double tailCentroidZ = 0.0;
 
 public:
-    // Конструктор сетки из заданного stl-файла
-     CalcMesh(const std::vector<double>& nodesCoords, const std::vector<std::size_t>& tetrsPoints) {
 
-        // Пройдём по узлам в модели gmsh
+    CalcMesh(const std::vector<double>& nodesCoords, const std::vector<std::size_t>& tetrsPoints) {
         nodes.resize(nodesCoords.size() / 3);
-        for(unsigned int i = 0; i < nodesCoords.size() / 3; i++) {
-            // Координаты заберём из gmsh
-            double pointX = nodesCoords[i*3];
-            double pointY = nodesCoords[i*3 + 1];
-            double pointZ = nodesCoords[i*3 + 2];
-            // Модельная скалярная величина распределена как-то вот так
-            double smth = pow(pointX, 2) + pow(pointY, 2) + pow(pointZ, 2);
+        for (unsigned int i = 0; i < nodesCoords.size() / 3; i++) {
+            double pointX = nodesCoords[i * 3];
+            double pointY = nodesCoords[i * 3 + 1];
+            double pointZ = nodesCoords[i * 3 + 2];
+            double smth = pow(pointX, 2) + pow(pointY, 2) + pow(pointZ, 2); //Пример
             nodes[i] = CalcNode(pointX, pointY, pointZ, smth, 0.0, 0.0, 0.0);
         }
 
-        // Пройдём по элементам в модели gmsh
         elements.resize(tetrsPoints.size() / 4);
-        for(unsigned int i = 0; i < tetrsPoints.size() / 4; i++) {
-            elements[i].nodesIds[0] = tetrsPoints[i*4] - 1;
-            elements[i].nodesIds[1] = tetrsPoints[i*4 + 1] - 1;
-            elements[i].nodesIds[2] = tetrsPoints[i*4 + 2] - 1;
-            elements[i].nodesIds[3] = tetrsPoints[i*4 + 3] - 1;
+        for (unsigned int i = 0; i < tetrsPoints.size() / 4; i++) {
+            elements[i].nodesIds[0] = tetrsPoints[i * 4] - 1;
+            elements[i].nodesIds[1] = tetrsPoints[i * 4 + 1] - 1;
+            elements[i].nodesIds[2] = tetrsPoints[i * 4 + 2] - 1;
+            elements[i].nodesIds[3] = tetrsPoints[i * 4 + 3] - 1;
         }
     }
 
-    // Метод для определения ушек (по координатам - пример)
-    void identifyEars() {
-        //  В цикле перебираем все узлы сетки.
+    void identifyTail() {
+      tailCentroidX = 0.0;
+      tailCentroidZ = 0.0;
         for (size_t i = 0; i < nodes.size(); ++i) {
-            // Получаем координаты текущего узла
-             auto [x, y, z] = nodes[i].getCoords();
-
-            //  Проверяем, попадает ли узел в область ушей
-            if (z > 10.0 &&  ((x > 2.0 && x < 5.0) || (x < -2.0 && x > -5.0))  && y > 5.0) {   // z - координата "высоты", x - "ширины".  Это очень грубый пример, нужно подобрать под твою модель!
-                earNodes.push_back(i); // Добавляем индекс узла в список ушек
+            auto [x, y, z] = nodes[i].getCoords();
+            if (y > 48.0) {
+                tailNodes.push_back(i);
+                tailCentroidX += x;
+                tailCentroidZ += z;
             }
         }
+        // Вычисляем центр хвоста
+        if (!tailNodes.empty())
+        {
+              tailCentroidX /= tailNodes.size();
+              tailCentroidZ /= tailNodes.size();
+        }
 
-        // Выведем количество найденных узлов, относящихся к "ушкам"
-        std::cout << "Found " << earNodes.size() << " ear nodes." << std::endl;
+        std::cout << "Found " << tailNodes.size() << " tail nodes." << std::endl;
+        std::cout << "Tail centroid: (" << tailCentroidX << ", " << tailCentroidZ << ")" << std::endl;
+
     }
 
-    // Метод для задания движения ушек (вращение вокруг оси Z - пример)
-    void moveEars(double time) {
-      const double omega = 0.5;  // Угловая скорость вращения
-      const double amplitude = 0.3; // Амплитуда (угол в радианах)
 
-      for (unsigned long nodeIndex : earNodes)
-      {
-            // Получаем координаты узла
-          auto [x, y, z] = nodes[nodeIndex].getCoords();
+    void moveTail(double time) {
+        const double omega = 2.0;  // Угловая скорость
 
-          // Центр вращения (примерно)
-          double centerX = (x > 0) ? 3.0 : -3.0;  //  Для правого и левого уха
-          double centerY = 6.0;
+        double adjustedTailCentroidZ = tailCentroidZ - 10.0;
 
-          // Расстояние от узла до центра вращения
-          double dx = x - centerX;
-          double dy = y - centerY;
-          double r = sqrt(dx * dx + dy * dy);
+        for (unsigned long nodeIndex : tailNodes) {
+            auto [x, y, z] = nodes[nodeIndex].getCoords();
 
-          // Текущий угол
-          double currentAngle = atan2(dy, dx);
+            // Вращение в плоскости XZ вокруг центра
+            double dx = x - tailCentroidX;
+            double dz = z - adjustedTailCentroidZ; // Используем adjustedTailCentroidZ
+            double r = sqrt(dx * dx + dz * dz);
+            double currentAngle = atan2(dz, dx);
+            double newAngle = currentAngle + omega * time;
+            double newX = tailCentroidX + r * cos(newAngle);
+            double newZ = adjustedTailCentroidZ + r * sin(newAngle); // Используем adjustedTailCentroidZ
 
-          // Новый угол (вращение)
-          double newAngle = currentAngle + amplitude * sin(omega * time);
+            double tau = 0.01;
+            double vx = (newX - x) / tau;
+            double vy = 0.0;
+            double vz = (newZ - z) / tau;
 
-          // Новые координаты
-          double newX = centerX + r * cos(newAngle);
-          double newY = centerY + r * sin(newAngle);
-
-          // Вычисляем скорость как разность новых и старых координат, деленную на шаг времени
-          double tau = 0.01; //шаг времени
-          double vx = (newX - x) / tau;
-          double vy = (newY - y) / tau;
-          double vz = 0.0;
-
-          // Устанавливаем скорость узла
-          nodes[nodeIndex].setVelocity(vx, vy, vz);
-      }
+            nodes[nodeIndex].setVelocity(vx, vy, vz);
+        }
     }
-    // Метод отвечает за выполнение для всей сетки шага по времени величиной tau
-     void doTimeStep(double tau) {
-        // По сути метод просто двигает все точки
-        for(unsigned int i = 0; i < nodes.size(); i++) {
+
+    void doTimeStep(double tau) {
+        for (unsigned int i = 0; i < nodes.size(); i++) {
             nodes[i].move(tau);
         }
     }
 
-    // Метод отвечает за запись текущего состояния сетки в снапшот в формате VTK
     void snapshot(unsigned int snap_number) {
-        // Сетка в терминах VTK
         vtkSmartPointer<vtkUnstructuredGrid> unstructuredGrid = vtkSmartPointer<vtkUnstructuredGrid>::New();
-        // Точки сетки в терминах VTK
         vtkSmartPointer<vtkPoints> dumpPoints = vtkSmartPointer<vtkPoints>::New();
-
-        // Скалярное поле на точках сетки
         auto smth = vtkSmartPointer<vtkDoubleArray>::New();
         smth->SetName("smth");
-
-        // Векторное поле на точках сетки
         auto vel = vtkSmartPointer<vtkDoubleArray>::New();
         vel->SetName("velocity");
         vel->SetNumberOfComponents(3);
 
-        // Обходим все точки нашей расчётной сетки
-        for(unsigned int i = 0; i < nodes.size(); i++) {
-            // Вставляем новую точку в сетку VTK-снапшота
+        for (unsigned int i = 0; i < nodes.size(); i++) {
             dumpPoints->InsertNextPoint(nodes[i].x, nodes[i].y, nodes[i].z);
-
-            // Добавляем значение векторного поля в этой точке
-            double _vel[3] = {nodes[i].vx, nodes[i].vy, nodes[i].vz};
+            double _vel[3] = { nodes[i].vx, nodes[i].vy, nodes[i].vz };
             vel->InsertNextTuple(_vel);
-
-            // И значение скалярного поля тоже
             smth->InsertNextValue(nodes[i].smth);
         }
 
-        // Грузим точки в сетку
         unstructuredGrid->SetPoints(dumpPoints);
-
-        // Присоединяем векторное и скалярное поля к точкам
         unstructuredGrid->GetPointData()->AddArray(vel);
         unstructuredGrid->GetPointData()->AddArray(smth);
 
-        // А теперь пишем, как наши точки объединены в тетраэдры
-        for(unsigned int i = 0; i < elements.size(); i++) {
+        for (unsigned int i = 0; i < elements.size(); i++) {
             auto tetra = vtkSmartPointer<vtkTetra>::New();
-            tetra->GetPointIds()->SetId( 0, elements[i].nodesIds[0] );
-            tetra->GetPointIds()->SetId( 1, elements[i].nodesIds[1] );
-            tetra->GetPointIds()->SetId( 2, elements[i].nodesIds[2] );
-            tetra->GetPointIds()->SetId( 3, elements[i].nodesIds[3] );
+            tetra->GetPointIds()->SetId(0, elements[i].nodesIds[0]);
+            tetra->GetPointIds()->SetId(1, elements[i].nodesIds[1]);
+            tetra->GetPointIds()->SetId(2, elements[i].nodesIds[2]);
+            tetra->GetPointIds()->SetId(3, elements[i].nodesIds[3]);
             unstructuredGrid->InsertNextCell(tetra->GetCellType(), tetra->GetPointIds());
         }
 
-        // Создаём снапшот в файле с заданным именем
         string fileName = "cat-step-" + std::to_string(snap_number) + ".vtu";
         vtkSmartPointer<vtkXMLUnstructuredGridWriter> writer = vtkSmartPointer<vtkXMLUnstructuredGridWriter>::New();
         writer->SetFileName(fileName.c_str());
@@ -232,108 +180,78 @@ public:
     }
 };
 
-int main()
-{
-    // Шаг точек по пространству
-    double h = 4.0; //не используется далее, можно удалить
-    // Шаг по времени
+int main() {
     double tau = 0.01;
-    // Количество шагов анимации
     int numSteps = 100;
-
     const unsigned int GMSH_TETR_CODE = 4;
 
-    // Теперь придётся немного упороться:
-    // (а) построением сетки средствами gmsh,
-    // (б) извлечением данных этой сетки в свой код.
     gmsh::initialize();
-    gmsh::model::add("t13");
+    gmsh::model::add("cat");
 
-    // Считаем STL
     try {
-        gmsh::merge("cat.stl"); 
+        gmsh::merge("cat.stl");
     } catch(...) {
         gmsh::logger::write("Could not load STL mesh: bye!");
         gmsh::finalize();
         return -1;
     }
 
-    // Восстановим геометрию
     double angle = 40;
-    bool forceParametrizablePatches = true;
+    bool forceParametrizablePatches = true; 
     bool includeBoundary = true;
     double curveAngle = 180;
     gmsh::model::mesh::classifySurfaces(angle * M_PI / 180., includeBoundary, forceParametrizablePatches, curveAngle * M_PI / 180.);
     gmsh::model::mesh::createGeometry();
 
-    // Зададим объём по считанной поверхности
     std::vector<std::pair<int, int> > s;
     gmsh::model::getEntities(s, 2);
     std::vector<int> sl;
     for(auto surf : s) sl.push_back(surf.second);
     int l = gmsh::model::geo::addSurfaceLoop(sl);
     gmsh::model::geo::addVolume({l});
-
     gmsh::model::geo::synchronize();
 
-    // Зададим мелкость желаемой сетки
     int f = gmsh::model::mesh::field::add("MathEval");
     gmsh::model::mesh::field::setString(f, "F", "4");
     gmsh::model::mesh::field::setAsBackgroundMesh(f);
 
-    // Построим сетку
     gmsh::model::mesh::generate(3);
 
-    // Теперь извлечём из gmsh данные об узлах сетки
     std::vector<double> nodesCoord;
     std::vector<std::size_t> nodeTags;
     std::vector<double> parametricCoord;
     gmsh::model::mesh::getNodes(nodeTags, nodesCoord, parametricCoord);
 
-    // И данные об элементах сетки тоже извлечём, нам среди них нужны только тетраэдры, которыми залит объём
     std::vector<std::size_t>* tetrsNodesTags = nullptr;
     std::vector<int> elementTypes;
     std::vector<std::vector<std::size_t>> elementTags;
     std::vector<std::vector<std::size_t>> elementNodeTags;
     gmsh::model::mesh::getElements(elementTypes, elementTags, elementNodeTags);
-    for(unsigned int i = 0; i < elementTypes.size(); i++) {
-        if(elementTypes[i] != GMSH_TETR_CODE)
-            continue;
+    for (unsigned int i = 0; i < elementTypes.size(); i++) {
+        if (elementTypes[i] != GMSH_TETR_CODE) continue;
         tetrsNodesTags = &elementNodeTags[i];
     }
 
-    if(tetrsNodesTags == nullptr) {
+    if (tetrsNodesTags == nullptr) {
         cout << "Can not find tetra data. Exiting." << endl;
         gmsh::finalize();
         return -2;
     }
 
-    cout << "The model has " <<  nodeTags.size() << " nodes and " << tetrsNodesTags->size() / 4 << " tetrs." << endl;
+    cout << "The model has " << nodeTags.size() << " nodes and " << tetrsNodesTags->size() / 4 << " tetrs." << endl;
 
-    // На всякий случай проверим, что номера узлов идут подряд и без пробелов
-    for(int i = 0; i < nodeTags.size(); ++i) {
-        // Индексация в gmsh начинается с 1, а не с нуля. Ну штош, значит так.
+    for (int i = 0; i < nodeTags.size(); ++i) {
         assert(i == nodeTags[i] - 1);
     }
-    // И ещё проверим, что в тетраэдрах что-то похожее на правду лежит.
     assert(tetrsNodesTags->size() % 4 == 0);
-
-    // TODO: неплохо бы полноценно данные сетки проверять, да
 
     CalcMesh mesh(nodesCoord, *tetrsNodesTags);
 
-    // Определяем ушки
-    mesh.identifyEars();
-
-     // Цикл по времени
+    // Идентификация и движение хвоста
+    mesh.identifyTail();
     for (int step = 0; step < numSteps; ++step) {
-        // Задаем движение ушек
-        mesh.moveEars(step * tau);
-
-        // Делаем шаг по времени для всей сетки
+        mesh.moveTail(step * tau);
         mesh.doTimeStep(tau);
-
-        // Сохраняем снапшот
         mesh.snapshot(step);
     }
 
