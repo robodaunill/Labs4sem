@@ -12,7 +12,6 @@ add_executable(circle circle.cpp)
 add_executable(cilinder cilinder.cpp)
 add_executable(torus torus.cpp)
 add_executable(cat cat.cpp)
-add_executable(thor thor.cpp)
 
 # --- Подключаем gmsh, тут придется перебирать варианты 
 
@@ -44,4 +43,3 @@ target_link_libraries(circle ${GMSH_LIBRARIES})
 target_link_libraries(cilinder ${GMSH_LIBRARIES})
 target_link_libraries(torus ${GMSH_LIBRARIES})
 target_link_libraries(cat ${GMSH_LIBRARIES})
-target_link_libraries(thor ${GMSH_LIBRARIES})
