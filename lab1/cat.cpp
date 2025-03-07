@@ -27,14 +27,10 @@ int main(int argc, char **argv)
 
     gmsh::option::setNumber("Mesh.MeshSizeFromPoints", 1);
     gmsh::option::setNumber("Mesh.MeshSizeExtendFromBoundary", 1);
-
-    // Оптимизация сетки
+    
+    gmsh::option::setNumber("Mesh.Algorithm3D", 1); 
     gmsh::option::setNumber("Mesh.Optimize", 1);
-    gmsh::option::setNumber("Mesh.OptimizeNetgen", 1);
-    gmsh::option::setNumber("Mesh.Smoothing", 100);
-
-    // Использование Netgen
-    gmsh::option::setNumber("Mesh.Algorithm3D", 10);
+    gmsh::option::setNumber("Mesh.Smoothing", 4); 
 
     gmsh::model::mesh::generate(3);
     gmsh::fltk::run();
