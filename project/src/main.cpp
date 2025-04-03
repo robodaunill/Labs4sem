@@ -85,13 +85,12 @@ private:
         vkDestroyInstance(instance, nullptr);
     }
 };
-
 int main() {
     try {
         VulkanContext vulkanContext;
-        Simulation simulation(5000);
+        Simulation simulation(5000, 1.5f); // 5000 частиц, радиус 1.5
         
-        const float dt = 0.016f; // 60 FPS
+        const float dt = 0.016f;
         int frame = 0;
         
         auto startTime = std::chrono::high_resolution_clock::now();
@@ -100,7 +99,11 @@ int main() {
             simulation.update(dt);
             
             if(i % 5 == 0) {
-                VTKWriter::writeFrame(simulation.getParticles(), "output/frame", frame++);
+                VTKWriter::writeFrame(
+                    simulation.getParticles(), 
+                    "output/frame", 
+                    frame++
+                );
             }
         }
         
@@ -114,6 +117,5 @@ int main() {
         std::cerr << "Error: " << e.what() << std::endl;
         return 1;
     }
-    
     return 0;
 }
