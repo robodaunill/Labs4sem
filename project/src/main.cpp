@@ -6,7 +6,6 @@
 #include <vector>
 #include <cstring>
 
-// Вручную определим необходимые константы, если заголовки устарели
 #define VK_MESA_HEADLESS_EXTENSION_NAME "VK_MESA_headless"
 #define VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME "VK_KHR_portability_enumeration"
 #define VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR 0x00000001

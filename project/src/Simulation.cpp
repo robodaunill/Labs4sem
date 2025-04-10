@@ -1,6 +1,6 @@
 #include "Simulation.hpp"
 #include <random>
-#include <glm/gtx/norm.hpp> // Для glm::length2
+#include <glm/gtx/norm.hpp> 
 
 Simulation::Simulation(size_t particleCount, float radius) 
     : sphereRadius(radius) {
